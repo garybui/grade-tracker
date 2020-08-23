@@ -1,0 +1,16 @@
+Good morning {Student Name},
+
+I’m writing because you are currently missing {number of missing assignments} assignment(s) in {class} class as of today, listed here: 
+{Missing assignments}
+Currently, this assignment(s) is graded as an F. The deadline to turn in this makeup work is {date}. 
+
+If you submit this assignment on Google Classroom by this deadline, your grade will be updated (with a letter grade deduction). If you do not submit the makeup work, it will be permanently graded as an F. 
+
+[BREAK]Other opportunities for boosting your grade:
+If you’re interested in boosting your grade, you can complete the OPTIONAL assignment(s) for this week, which you can find on Google Classroom. This week’s optional assignment(s) is/are: 
+{Optional assignments}
+
+[BREAK]Your family member is cc’d so that they are aware as well.  [BREAK]Please reach out with any questions if you need clarification. 
+
+All the best,
+
