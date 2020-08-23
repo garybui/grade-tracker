@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+    <h2>Updating..</h2>
+    <p id="status">(innerHTML).</p>
+    <div id="imageico"></div>
+    <script>
+      var imageContainer = document.getElementById("imageico");
+      if (<?= data ?> != "Finished!"){
+        document.getElementById("status").innerHTML = "Running script, please wait...";
+      } 
+      else {
+        document.getElementById("status").innerHTML = "Finished! You may now close this window.";
+      }     
+      if (<?= close ?> == "close"){
+        google.script.host.close();
+      }
+    </script>
+  </body>
+</html>
