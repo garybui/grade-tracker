@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  </head>
+  <body>
+    <p id="lastUpdated" />
+    <input type="button" value="Update Report" onclick="googleScript(updateReportDate, 'GR Updated On')"/>
+    <p id="numTopics"/> 
+    <input type="button" value="Update # of Topics to View" onclick="google.script.run.googleScript(updateNumTopics, 'Num of Topics to View')"/>
+    <p id="dueDate"/>
+    <input type="button" value ="Update Due Date" onclick="google.script.run.google.script.run.googleScript(updateDueDate, 'Deadline')"/>
+    <p id="emailsCreatedOn"/>
+    <input type="button" value="Generate Emails" onclick="google.script.run.googleScript(updateEmailDate, 'Date Drafted')"/>
+    <script>
+      google.script.run.googleScript(updateReportDate, 'GR Updated On'); 
+      google.script.run.googleScript(updateNumTopics, 'Num of Topics to View');
+      google.script.run.googleScript(updateEmailDate, 'Date Drafted');
+      google.script.run.googleScript(updateDueDate, 'Deadline');
+      
+      function updateReportDate(dateUpdated) {
+        $('#lastUpdated').text("Report last updated on: " + dateUpdated);
+      };
+      
+      function updateNumTopics(numTopics){
+        $('#numTopics').text("Number of Topics to view: " + numTopics);
+      };
+     
+      function updateEmailDate(dateUpdated){
+        $('#emailsCreatedOn').text("Emails last generated on: " + dateUpdated);
+      };
+      
+      function updateDueDate(dateUpdated){
+        $('#dueDate').text("Due date is currently set to: " + dateUpdated);
+      };
+      
+      function googleScript(successFunc, updateText) {
+        let somethingWentWrong = function() {
+          $('#lastUpdated').text("Something went wrong");
+        };
+        google.script.run.withFailureHandler(somethingWentWrong).withSuccessHandler(successFunc).updateOnButtonClick(updateText);
+      }
+    </script>    
+   
+  </body>
+</html>
