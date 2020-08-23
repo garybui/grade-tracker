@@ -1,0 +1,41 @@
+{
+  "timeZone": "America/Los_Angeles",
+  "dependencies": {
+    "enabledAdvancedServices": [{
+      "userSymbol": "Classroom",
+      "serviceId": "classroom",
+      "version": "v1"
+    }, {
+      "userSymbol": "Sheets",
+      "serviceId": "sheets",
+      "version": "v4"
+    }],
+    "libraries": [{
+      "userSymbol": "OAuth2",
+      "libraryId": "1B7FSrk5Zi6L1rSxxTDgDEUsPzlukDsi4KGuTMorsTQHhGBzBkMun4iDF",
+      "version": "38",
+      "developmentMode": true
+    }]
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "oauthScopes": ["https://www.googleapis.com/auth/script.container.ui", "https://www.googleapis.com/auth/classroom.courses", "https://www.googleapis.com/auth/gmail.compose", "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/", " https://www.googleapis.com/auth/gmail.addons.current.action.compose", "https://www.googleapis.com/auth/classroom.topics", "https://www.googleapis.com/auth/documents", "https://www.googleapis.com/auth/classroom.coursework.me.readonly", "https://www.googleapis.com/auth/classroom.guardianlinks.me.readonly", "https://www.googleapis.com/auth/classroom.guardianlinks.students.readonly", "https://www.googleapis.com/auth/classroom.profile.emails", "https://www.googleapis.com/auth/classroom.profile.photos", "https://www.googleapis.com/auth/classroom.rosters", "https://www.googleapis.com/auth/classroom.coursework.me", "https://www.googleapis.com/auth/classroom.coursework.me.readonly", "https://www.googleapis.com/auth/classroom.coursework.students", "https://www.googleapis.com/auth/classroom.coursework.students.readonly", "https://www.googleapis.com/auth/spreadsheets"],
+  "runtimeVersion": "V8",
+  "sheets": {
+    "macros": [{
+      "menuName": "main",
+      "functionName": "main"
+    }, {
+      "menuName": "formatSheets",
+      "functionName": "formatSheets"
+    }, {
+      "menuName": "test",
+      "functionName": "test"
+    }, {
+      "menuName": "createCourseRoster",
+      "functionName": "createCourseRoster"
+    }, {
+      "menuName": "createEmailDrafts",
+      "functionName": "createEmailDrafts"
+    }]
+  }
+}
