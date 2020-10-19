@@ -1,21 +1,30 @@
 //Change these constants to match your information
-var OWNER_ID = '104986340052662164781'; //Use getOwnerId() function to find out your ownerID
-var EMAIL_TEMPLATE_ID = "1cad8XYXydvcNiy6sagUEbzJ10-8h8VTEE9xa_AKCUHc";
-var IMPORT_GUARDIAN_EMAILS_FROM = "1s0weWAZ11_i5scsYF8Q21hGPT3N3W7k9XIdDmflzjVY"; //leave blank for manual entry instead
+var OWNER_ID = ''; //Use getOwnerId() function to find out your ownerID
+var EMAIL_TEMPLATE_ID = "";
+var IMPORT_GUARDIAN_EMAILS_FROM = ""; //leave blank for manual entry instead
 
 
 //Change these variables to customize the spreadsheet 
-var COURSE_DICTIONARY = [{key: "history", value: "history"}, {key: "scientific", value: "science"}];
+var COURSE_DICTIONARY = [{key: "history", value: "history"}, {key: "science", value: "science"}];
 
-var EXTRA_CREDIT_KEYWORDS = ["extra credit"];
-var CLASSWORK_KEYWORDS = ["classwork", "in class"];
-var HOMEWORK_KEYWORDS = ["homework", "assignment"];
+var ASSIGNMENT_TYPE_DEFAULT = "OPTIONAL"; 
+
+var ASSIGNMENT_TYPE1 = "HOMEWORK";
+var TYPE1_KEYWORDS = ["homework", "assignment", "hw", "quiz"];
+
+var ASSIGNMENT_TYPE2 = "CLASSWORK";
+var TYPE2_KEYWORDS = ["classwork", "in class", "async", "cw", "exit ticket"];
+
+var ASSIGNMENT_TYPE3 = "EXTRA CREDIT";
+var TYPE3_KEYWORDS = ["extra credit"];
 
 var DEFAULT_NUM_TOPICS = 3;
 
-var GRACE_PERIOD = 1; //Number of hours 
+var EXCLUDED_CLASSES_KEYWORDS = ["advisory"];
 
-var EMAIL_SUBJECT = "Missing Assignments for Class";
+var GRACE_PERIOD_HOURS = 1;  
+
+var EMAIL_SUBJECT = "Missing Assignments for"; //Class name will be added later
 
 /*---------------------------------------*/
 // Be careful editing beyond this line //
@@ -42,11 +51,20 @@ var DATE_DRAFTED_COLUMN_NAME = "Date Drafted";
 var DEADLINE_COLUMN_NAME = "Deadline";
 var NUM_TOPICS_COLUMN_NAME = "Num Topics to View";
 var EMAIL_HUB_HEADER = [CLASS_COLUMN_NAME, FN_COLUMN_NAME, LN_COLUMN_NAME, EMAIL_COLUMN_NAME, GUARDIAN_ONE_COLUMN_NAME, GUARDIAN_TWO_COLUMN_NAME, 
-  DRAF_ID_COLUMN_NAME, GR_COLUMN_NAME, DATE_DRAFTED_COLUMN_NAME, DEADLINE_COLUMN_NAME, DEADLINE_COLUMN_NAME, NUM_TOPICS_COLUMN_NAME];
+  DRAFT_ID_COLUMN_NAME, GR_COLUMN_NAME, DATE_DRAFTED_COLUMN_NAME, DEADLINE_COLUMN_NAME, DEADLINE_COLUMN_NAME, NUM_TOPICS_COLUMN_NAME];
+
+var MISSING_ASSIGNMENT_LIST_DELIMITER = "****************\n";
 
 var NUM_TOPICS_TO_VIEW = getNumTopicsToView();
 var GRADE_REPORT = SpreadsheetApp.getActiveSpreadsheet();
 var [EMAIL_HUB, MASTER_ROSTER, ...CLASS_LIST] = GRADE_REPORT.getSheets();
+
+var CURRENT_COURSE_ID = "";
+var CURRENT_COURSE_NAME = "";
+var CURRENT_ASSIGNMENT_LIST = [];
+var TOTAL_TYPE1 = [];
+var TOTAL_TYPE2 = [];
+
 
 function getOwnerId() {
   let courses = Classroom.Courses.list().courses;
@@ -116,8 +134,13 @@ function controlPanel() {
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
+function test()
+{
+  updateOnButtonClick("GR Updated On");
+}
+
 function updateOnButtonClick(targetItem) {
-  let header = EMAIL_HUB.getSheetValues(1,1,1,sheet.getLastColumn());
+  let header = EMAIL_HUB.getSheetValues(1,1,1,EMAIL_HUB.getLastColumn());
   let targetValue = EMAIL_HUB.getRange(2,getIndexOf(header, targetItem))
   if(targetItem == "GR Updated On") {createCourseRoster();}
   else if(targetItem == "Date Drafted") {
@@ -188,7 +211,7 @@ function updateNumOfTopicsToView() {
 }
 
 function getLastUpdate(targetItem) {
-  let header = EMAIL_HUB.getSheetValues(1,1,1,sheet.getLastColumn());
+  let header = EMAIL_HUB.getSheetValues(1,1,1,EMAIL_HUB.getLastColumn());
   let targetValue = EMAIL_HUB.getRange(2,getIndexOf(header, targetItem))
   if(targetValue.getDisplayValue() == "") return "Has not been generated yet";
   else return targetValue.getDisplayValue();
@@ -204,6 +227,52 @@ function actionCompleteNotifier(status,close) {
     .setHeight(200));
 }
 
+function getAllStudents(courseId) {
+  let returnedStudents = []
+  let options = {pageSize: 30};
+    
+  do {
+    let search = Classroom.Courses.Students.list(courseId, options);
+      
+    if (search.students)
+      Array.prototype.push.apply(returnedStudents, search.students);
+      
+    options.pageToken = search.nextPageToken;
+  } while (options.pageToken);
+    
+  return returnedStudents;
+}
+
+function determineAssignmentType(assignmentName) {
+  let assignmentType = ASSIGNMENT_TYPE_DEFAULT;
+              
+  for (let keyword of TYPE1_KEYWORDS) {
+    if(assignmentName.toLowerCase().includes(keyword)) {
+       assignmentType = ASSIGNMENT_TYPE1;
+      break;
+    }
+  }          
+  if(assignmentType == ASSIGNMENT_TYPE1) return assignmentType;    
+  
+  for (let keyword of TYPE2_KEYWORDS) {
+    if(assignmentName.toLowerCase().includes(keyword)) {
+      assignmentType = ASSIGNMENT_TYPE2;       
+      break;
+    }
+  }          
+  if(assignmentType == ASSIGNMENT_TYPE2) return assignmentType;
+    
+  for (let keyword of TYPE3_KEYWORDS) {
+    if(assignmentName.toLowerCase().includes(keyword)) {
+      assignmentType = ASSIGNMENT_TYPE3;
+      break
+    }
+  }          
+    
+  return assignmentType;
+}
+
+
 function createCourseRoster() {
   actionCompleteNotifier("","");
   let rawCourses = getMyActiveCourses(OWNER_ID); 
@@ -216,216 +285,232 @@ function createCourseRoster() {
   createMasterRosterSheet(); 
   let header = EMAIL_HUB.getSheetValues(1,1,1,EMAIL_HUB.getLastColumn());
 
-  rawCourses.forEach((course) => { 
-    const {name: courseName, id : courseId, section} = course;
-    let rawStudents = Classroom.Courses.Students.list(courseId).students || [];
+  rawCourses.forEach(({name: courseName, id: courseId, section: courseSection}) => { 
+    CURRENT_COURSE_ID = courseId;
+    CURRENT_COURSE_NAME = courseName;
+    let excludeClass = false;
+    EXCLUDED_CLASSES_KEYWORDS.forEach(function(keyword) {
+      if(courseName.toLowerCase().includes(keyword)) {
+        excludeClass = true
+        return;
+      }
+    });
     
-    if(rawStudents == [] || rawStudents.length == 0) return;
+    let rawStudents = getAllStudents(courseId);
     
-    let tabName = courseName.concat(" ", section);
+    if(excludeClass || rawStudents == [] || rawStudents.length == 0) return;
+    
+    let tabName = courseName;
+    if(courseSection != undefined) tabName = tabName.concat(" (", courseSection, ")"); 
     let sheet = GRADE_REPORT.getSheetByName(tabName) || GRADE_REPORT.insertSheet(tabName, SpreadsheetApp.getActiveSpreadsheet().getSheets().length);
+    if(sheet.getLastRow()-4 > 0) classSizesPreviousIteration.push(sheet.getLastRow()-4);
     sheet.clear();
+
     
     let rawTopics = Classroom.Courses.Topics.list(courseId).topic || [];
     let rawAssignments = Classroom.Courses.CourseWork.list(courseId).courseWork || [];
-     
-    let allAssignmentIds = []; 
     
-    let printableTopics = ["","","Unit Name"];
-    let printableAssignmentNames = ["","","Assignment Name",""];
-    let printableAssignmentDueDates = ["","","Due Date",""];
+    organizeRawAssignments(rawTopics, rawAssignments);
     
-    let numValidTopics = 0; 
+    let everyStudentAssignmentSubmission = getAllAssignmentSubmissions();
     
-    rawTopics.forEach((topic) => {
-      if(rawAssignments.length > 0) {
-        let assignmentsFilteredByTopic = rawAssignments.filter((assignment) => assignment.topicId == topic.topicId);
-        let sortedAssignmentsFilteredByTopic = assignmentsFilteredByTopic.sort((a,b) => (a.creationTime < b.creationTime) ? 1: -1);
-        if(sortedAssignmentsFilteredByTopic.length != 0 && numValidTopics < NUM_TOPICS_TO_VIEW) {
-          numValidTopics++;
-          let arrayOfSpaces = new Array(sortedAssignmentsFilteredByTopic.length).fill("");
-          printableTopics.push(topic.name);
-          printableTopics = printableTopics.concat(arrayOfSpaces);
-          
-          mergeAndCenterCells(sheet, 1, printableTopics.indexOf(topic.name)+1, 1, sortedAssignmentsFilteredByTopic.length+1);
-           
-          let assignmentIds = sortedAssignmentsFilteredByTopic.map(({id}) => id);
-          allAssignmentIds = allAssignmentIds.concat(assignmentIds);
-          allAssignmentIds.push("");
-          
-          let assignmentNamesFilteredByTopic = sortedAssignmentsFilteredByTopic.map(({title}) => title);
-          
-          printableAssignmentNames = printableAssignmentNames.concat(assignmentNamesFilteredByTopic);
-          printableAssignmentNames.push(""); 
-          
-          let assignmentDueDatesFilteredByTopic = sortedAssignmentsFilteredByTopic.map(function({dueDate}) {
-            if(dueDate == null) return "N/A";
-            else return dueDate.month + "/" + dueDate.day;
-          });
-          
-          printableAssignmentDueDates = printableAssignmentDueDates.concat(assignmentDueDatesFilteredByTopic);
-          printableAssignmentDueDates.push("");
-        }
+    let studentsWithAssignmentStatuses = processStudentSubmissions(rawStudents, everyStudentAssignmentSubmission);
+   
+    printTopicAndAssignmentHeaders(sheet, CURRENT_ASSIGNMENT_LIST);
+    printStudents(sheet, studentsWithAssignmentStatuses);
+  });
+  CLASS_LIST.forEach(sheet => classSizesCurrentIteration.push(sheet.getLastRow()-4));
+  manageEmailHubList(classSizesCurrentIteration, classSizesPreviousIteration);
+  
+  formatSheets();
+  formatMasterRoster();
+  formatEmailHub();
+  
+  EMAIL_HUB.getRange(2,getIndexOf(header, GR_COLUMN_NAME)).setValue(new Date());
+  actionCompleteNotifier("Finished!","");
+} 
+
+function printStudents(sheet, students) {
+  students.forEach(({profile, assignmentSubmissionStatus, missingType1Assignments, missingType2Assignments, missingType3Assignments}) => {
+    let studentInfo = [profile.name.givenName, profile.name.familyName]
+    if(studentInfo[0] != null || studentInfo[1] != null) {
+      let printToClassTab = studentInfo.concat("", assignmentSubmissionStatus);
+      sheet.appendRow(printToClassTab);
+
+      
+      let allMissingAssignmentsList = [];
+      for (i = 0; i < missingType1Assignments.length; i++) {
+        let numMissingType1 = missingType1Assignments[i].split("\t-").length-1;
+        let numMissingType2 = missingType2Assignments[i].split("\t-").length-1;
+        allMissingAssignmentsList.push(
+          numMissingType1+"/"+TOTAL_TYPE1[i],
+          numMissingType2+"/"+TOTAL_TYPE2[i],
+          missingType1Assignments[i].concat(MISSING_ASSIGNMENT_LIST_DELIMITER, missingType2Assignments[i], MISSING_ASSIGNMENT_LIST_DELIMITER, missingType3Assignments[i])
+        );
       }
-    })
-    
+      
+      let printToMasterRoster = [CURRENT_COURSE_NAME].concat(studentInfo,profile.emailAddress, allMissingAssignmentsList)
+      MASTER_ROSTER.appendRow(printToMasterRoster);
+    }
+  });
+}
+
+
+function processStudentSubmissions(rawStudents, allSubmissions) {
+    rawStudents.forEach((student) => {
+      let processedSubmissionStates = [];
+      let missingTYPE1 = [];
+      let missingTYPE2 = [];
+      let missingTYPE3 = [];
+      let thisStudentsSubmissions = allSubmissions.filter((assignmentSubmission) => assignmentSubmission.userId == student.userId || assignmentSubmission == "");
+      thisStudentsSubmissions.forEach((submission) => {  
+        if(typeof submission != "object") {
+          missingTYPE1.push("");
+          missingTYPE2.push("");
+          missingTYPE3.push("");
+          processedSubmissionStates.push("");
+        } 
+        else {
+          let currentAssignment = CURRENT_ASSIGNMENT_LIST.find((assignment) => assignment.id == submission.courseWorkId);
+          let {dueTime: assignmentDueTime, assignmentType: type, title: assignmentName} = currentAssignment;
+                  switch(submission.state) {
+                    case "NEW":
+                    case "RECLAIMED_BY_STUDENT":
+                    case "CREATED":
+                      if(type == ASSIGNMENT_TYPE_DEFAULT) {
+                        processedSubmissionStates.push("OPTIONAL");
+                        break;
+                      }
+                      else if(type == ASSIGNMENT_TYPE3) {
+                        processedSubmissionStates.push("EXTRA CREDIT");
+                        missingTYPE3[missingTYPE3.length-1]= missingTYPE3[missingTYPE3.length-1].concat("\t-", assignmentName, "\n");
+                        break;
+                      }
+                      if(!submission.late && assignmentDueTime != null) {
+                          processedSubmissionStates.push("NOT YET DUE"); 
+                          break;
+                      }
+                      else {
+                          if(assignmentDueTime != null) {
+                            processedSubmissionStates.push("MISSING");
+                            type == ASSIGNMENT_TYPE1 ? 
+                              missingTYPE1[missingTYPE1.length-1]= missingTYPE1[missingTYPE1.length-1].concat("\t-", assignmentName, "\n") : 
+                              missingTYPE2[missingTYPE2.length-1]= missingTYPE2[missingTYPE2.length-1].concat("\t-", assignmentName,"\n"); 
+                            break;
+                          }
+                          else processedSubmissionStates.push("NOT YET DUE");
+                          break;
+                      }
+                    case "RETURNED":
+                      processedSubmissionStates.push("GRADED");
+                      break;
+                    case "TURNED_IN":
+                      if(submission.assignedGrade == null) {
+                        if(assignmentDueTime == null) processedSubmissionStates.push("SUBMITTED");
+                        else if(submission.late && !submittedWithinGracePeriod(submission.updateTime, assignmentDueTime)) {
+                          let submissionDate = splitTimeStamp(submission.updateTime);
+                          processedSubmissionStates.push(submissionDate.concat(" - LATE"));
+                        }
+                        else processedSubmissionStates.push("SUBMITTED"); 
+                      }
+                      else processedSubmissionStates.push("GRADED");
+                      break;
+                      
+                    default:
+                      processedSubmissionStates.push("ERROR");
+                  }
+            }
+       });
+       
+       student.assignmentSubmissionStatus = processedSubmissionStates;
+       student.missingType1Assignments = missingTYPE1;
+       student.missingType2Assignments = missingTYPE2;
+       student.missingType3Assignments = missingTYPE3;
+    });
+
+  return rawStudents;
+}
+
+function getAllAssignmentSubmissions() {
+  let allAssignmentsSubmissions = [];
+  CURRENT_ASSIGNMENT_LIST.forEach((assignment) => {
+    if(typeof assignment == "object") {
+      let assignmentSubmissions = Classroom.Courses.CourseWork.StudentSubmissions.list(CURRENT_COURSE_ID,assignment.id).studentSubmissions;
+      allAssignmentsSubmissions = allAssignmentsSubmissions.concat(assignmentSubmissions);
+    }
+    else allAssignmentsSubmissions.push("");
+  });
+  
+  return allAssignmentsSubmissions;
+  
+}
+
+function printTopicAndAssignmentHeaders(sheet, assignmentsOrderedByTopic) {
+    let printableTopics = ["","","Unit Name"];
+    let printableAssignmentNames = ["","","Assignment Name"];
+    let printableAssignmentDueDates = ["","","Due Date"];
+    assignmentsOrderedByTopic.forEach((assignment) => {
+      if(typeof assignment == "object") {
+        let {title: assignmentName, dueDate: assignmentDueDate} = assignment;
+        printableAssignmentNames.push(assignmentName);
+        assignmentDueDate == undefined ? printableAssignmentDueDates.push("N/A") : printableAssignmentDueDates.push(assignmentDueDate.month+"/"+assignmentDueDate.day);
+        printableTopics.push("");
+      }
+      else {
+        printableTopics.push(assignment);
+        printableAssignmentNames.push("");
+        printableAssignmentDueDates.push("");
+      }
+    });
+
     sheet.appendRow(printableTopics);
     sheet.appendRow(printableAssignmentNames);
     sheet.appendRow(printableAssignmentDueDates);
     sheet.appendRow(["Student Names"]);
-    
-    let allAssignmentsSubmissions = []; 
-    
-    allAssignmentIds.forEach((assignmentId) => {
-      if(assignmentId != "") {
-        let assignmentSubmissions = Classroom.Courses.CourseWork.StudentSubmissions.list(courseId,assignmentId).studentSubmissions;
-        allAssignmentsSubmissions = allAssignmentsSubmissions.concat(assignmentSubmissions);
-      }
-      else allAssignmentsSubmissions.push("");
-    });
-    
-    let numberOfStudents = 0; 
-    if(rawStudents.length > 0) {
-      rawStudents.forEach(({profile, userId}, studentIndex) => {
-          let studentProfile = [tabName, profile.name.givenName, profile.name.familyName, profile.emailAddress];
-          let studentProfileMR = studentProfile.concat();
-          let studentName = [profile.name.givenName, profile.name.familyName,"",""];
-          let numberOfMissingHomework = 0;
-          let numberOfMissingClasswork = 0;
-          let totalAssignmentsPerUnit = 0;
-          let totalClassworkPerUnit = 0;
-          let studentInfo = studentName;
-          let missingExtras = "\nEC:\n"; 
-          let missingHomework = "HW:\n";
-          let missingClasswork = "\nCW:\n";
 
-          let studentAssignmentSubmissions = allAssignmentsSubmissions.filter((assignmentSubmission) => assignmentSubmission.userId == userId || assignmentSubmission == "");
+}
+
+function organizeRawAssignments(rawTopics, rawAssignments) {
+  let numValidTopics = 0;
+  let assignmentsOrderedByTopic = [];
+  
+  rawTopics.forEach((topic) => {
+    if(rawAssignments.length > 0) {
+      let assignmentsFilteredByTopic = rawAssignments.filter((assignment) => assignment.topicId == topic.topicId);
+      let orderedAssignmentsByCreationTime = assignmentsFilteredByTopic.sort((a,b) => (a.creationTime < b.creationTime) ? 1: -1);
+      let processedAssignmentTypes = orderedAssignmentsByCreationTime
+      processedAssignmentTypes.forEach((assignment) => assignment.assignmentType = determineAssignmentType(assignment.title));
+      
+      let numType1Assignments = processedAssignmentTypes.filter((assignment) => assignment.assignmentType == ASSIGNMENT_TYPE1).length;
+      let numType2Assignments = processedAssignmentTypes.filter((assignment) => assignment.assignmentType == ASSIGNMENT_TYPE2).length;
+      
+      if(processedAssignmentTypes.length != 0 && numValidTopics < NUM_TOPICS_TO_VIEW) {
+          numValidTopics++;          
+          assignmentsOrderedByTopic.push(topic.name);
+          assignmentsOrderedByTopic = assignmentsOrderedByTopic.concat(processedAssignmentTypes);
+          TOTAL_TYPE1.push(numType1Assignments);
+          TOTAL_TYPE2.push(numType2Assignments);
           
-          studentAssignmentSubmissions.forEach(({state, updateTime, late, courseWorkId, assignedGrade},i) => {
-            let thisAssignment = rawAssignments.filter((assignment) => assignment.id == courseWorkId);
-            if(thisAssignment[0]!= null) {
-              var {title: assignmentName, dueTime : assignmentDueTime} = thisAssignment[0];
-              var isOptional = false;
-              var isExtraCredit = false;
-              var isHomework = false;
-              var isClasswork = false;
-            
-            
-              CLASSWORK_KEYWORDS.forEach(keyword => {
-                if(assignmentName.toLowerCase().includes(keyword)) isClasswork = true; 
-              });
-              
-              if(!isClasswork){
-                HOMEWORK_KEYWORDS.forEach(keyword => {
-                  if(assignmentName.toLowerCase().includes(keyword)) isHomework = true; 
-                });
-              }
-              if(!isHomework && !isClasswork){
-                EXTRA_CREDIT_KEYWORDS.forEach(keyword => {
-                  if(assignmentName.toLowerCase().includes(keyword)) isExtraCredit = true; 
-                });
-              }
-              if(!isHomework && !isClasswork && !isExtraCredit) isOptional = true;
-              
-            }
-
-            switch(state) {
-              case "NEW":
-              case "RECLAIMED_BY_STUDENT":
-              case "CREATED":
-                if(isOptional) {
-                  studentInfo.push("OPTIONAL");
-                  break;
-                }
-                else if(isExtraCredit) {
-                  studentInfo.push("EXTRA CREDIT"); 
-                  missingExtras = missingExtras.concat("\t - " + assignmentName + "\n");
-                  break;
-                }
-                if(!late && assignmentDueTime != null) {
-                    studentInfo.push("NOT YET DUE"); 
-                    totalAssignmentsPerUnit++;
-                    break;
-                  }
-                  else {
-                    if(assignmentDueTime == null) {
-                      studentInfo.push("NOT YET DUE");
-                      break;
-                    }
-                    else {studentInfo.push("MISSING");}
-                    if(isHomework) {
-                      missingHomework = missingHomework.concat("\t - " + assignmentName + "\n");
-                      numberOfMissingHomework++; 
-                      totalAssignmentsPerUnit++;
-                      break;
-                    }
-                    else {
-                      totalClassworkPerUnit++;
-                      numberOfMissingClasswork++;
-                      missingClasswork = missingClasswork.concat("\t - " + assignmentName + "\n");
-                      break;
-                    }
-                  }
-              case "RETURNED":
-                studentInfo.push("GRADED");
-                if(isClasswork) {totalClassWorkPerUnit++;}
-                else if(isExtraCredit) {break;}
-                else {totalAssignmentsPerUnit++;}
-                break;
-              case "TURNED_IN":
-                if(assignedGrade == null) {
-                  if(late && !submittedWithinGracePeriod(updateTime, assignmentDueTime)) {
-                    let submissionDate = splitTimeStamp(updateTime);
-                    studentInfo.push(submissionDate.concat(" - LATE"));
-                  }
-                  else {
-                    studentInfo.push("SUBMITTED"); 
-                  }
-                }
-                else {studentInfo.push("GRADED");}
-                if(isClasswork) {totalClassworkPerUnit++; break;}
-                else if(isExtraCredit) {break;}
-                else {totalAssignmentsPerUnit++; break;}
-                
-              default:
-                studentInfo.push("");
-                let ratioOfmissingHomework = numberOfMissingHomework +":"+ totalAssignmentsPerUnit;
-                let ratioOfMissingClasswork = numberOfMissingClasswork + ":"+ totalClassworkPerUnit;
-                let listOfMissingWork = missingHomework.concat(missingClasswork, missingExtras);
-                studentProfileMR.push(ratioOfmissingHomework, ratioOfMissingClasswork, listOfMissingWork);
-                numberOfMissingHomework = 0;
-                totalAssignmentsPerUnit = 0;
-                numberOfMissingClasswork = 0;
-                totalClassworkPerUnit = 0;
-                missingExtras = "\nEC:\n"; 
-                missingHomework = "HW:\n";
-                missingClasswork = "\nCW:\n";
-                break;
-            }          
-          })        
-          if(studentInfo[0] != null || studentInfo[1] != null) {
-            sheet.appendRow(studentInfo);
-            MASTER_ROSTER.appendRow(studentProfileMR); 
-            numberOfStudents++;
-          }   
-        });
+      }
     }
-    classSizesCurrentIteration.push(numberOfStudents);
-   });
-   
-   sortAndMergeSheet(MASTER_ROSTER, true, false);
-   formatSheets();
+  });
+  
+  CURRENT_ASSIGNMENT_LIST = assignmentsOrderedByTopic;
+}
 
+
+function manageEmailHubList(classSizesCurrentIteration, classSizesPreviousIteration) {
+   let header = EMAIL_HUB.getSheetValues(1,1,1,EMAIL_HUB.getLastColumn());
    if(classSizesPreviousIteration == undefined || classSizesPreviousIteration < 1){
      let rangeToCopy = MASTER_ROSTER.getRange(2,1,MASTER_ROSTER.getLastRow(), 4);
      rangeToCopy.copyTo(EMAIL_HUB.getRange(2,1), {contentsOnly:true});
      
-     let studentEmails = EMAIL_HUB.getRange(2,getIndexOf(header, EMAIL_COLUMN_NAME),EMAIL_HUB.getLastRow()-1,1).getValues().flat(1);
+     let studentEmails = EMAIL_HUB.getRange(2,EMAIL_HUB_HEADER.indexOf(EMAIL_COLUMN_NAME)+1,EMAIL_HUB.getLastRow()-1,1).getValues().flat(1);
      
      studentEmails.forEach((email,matchIndex) => {
        let guardianEmails = getGuardianEmails(email);
-       EMAIL_HUB.getRange(matchIndex +2, getIndexOf(header, GUARDIAN_ONE_COLUMN_NAME)).setValue(guardianEmails[0]);
-       EMAIL_HUB.getRange(matchIndex +2, getIndexOf(header, GUARDIAN_TWO_COLUMN_NAME)).setValue(guardianEmails[1]);
+       EMAIL_HUB.getRange(matchIndex +2, EMAIL_HUB_HEADER.indexOf(GUARDIAN_ONE_COLUMN_NAME)+1).setValue(guardianEmails[0]);
+       EMAIL_HUB.getRange(matchIndex +2, EMAIL_HUB_HEADER.indexOf(GUARDIAN_TWO_COLUMN_NAME)+1).setValue(guardianEmails[1]);
      });
    }
    else {
@@ -451,8 +536,8 @@ function createCourseRoster() {
                  rangeToCopy.copyTo(EMAIL_HUB.getRange(startingPosition+1,1), {contentsOnly:true});
                  let studentEmail = EMAIL_HUB.getRange(startingPosition+1, getIndexOf(header, EMAIL_COLUMN_NAME)).getDisplayValue();
                  let guardianEmails = getGuardianEmails(studentEmail);
-                 EMAIL_HUB.getRange(startingPosition+1, getIndexOf(header, GUARDIAN_ONE_COLUMN_NAME)).setValue(guardianEmails[0]);
-                 EMAIL_HUB.getRange(startingPosition+1, getIndexOf(header, GUARDIAN_TWO_COLUMN_NAME)).setValue(guardianEmails[1]);
+                 EMAIL_HUB.getRange(startingPosition+1, EMAIL_HUB_HEADER.indexOf(GUARDIAN_ONE_COLUMN_NAME)+1).setValue(guardianEmails[0]);
+                 EMAIL_HUB.getRange(startingPosition+1, EMAIL_HUB_HEADER.indexOf(GUARDIAN_TWO_COLUMN_NAME)+1).setValue(guardianEmails[1]);
              }
            });
          }
@@ -474,10 +559,6 @@ function createCourseRoster() {
        }
      }
    }
-   sortAndMergeSheet(EMAIL_HUB, true, false);
-   EMAIL_HUB.getRange(2,getIndexOf(header, GR_COLUMN_NAME)).setValue(new Date());
-   masterRosterFormatting(); 
-   actionCompleteNotifier("Finished!","");
 }
 
 function getMyActiveCourses(ownerId) {
@@ -521,7 +602,7 @@ function submittedWithinGracePeriod(timeStamp, dueTime) {
   
   let dueHour = dueTime.getHours();
 
-  return (submissionHour == dueHour ||submissionHour == (dueHour + GRACE_PERIOD)) 
+  return (submissionHour == dueHour ||submissionHour == (dueHour + GRACE_PERIOD_HOURS)) 
 }
 
 function countNewStudents() {
@@ -544,7 +625,7 @@ function getGuardianEmails(studentEmailToLookUp) {
   
   if(matchIndex == -1) return ["MATCH NOT FOUND", "MATCH NOT FOUND"];
   else {
-    let guardianEmail1 = sheets[0].getRange(matchIndex+2, getIndexOf(sheetHeader, GUARUDIAN_ONE_COLUMN_NAME)).getDisplayValue();
+    let guardianEmail1 = sheets[0].getRange(matchIndex+2, getIndexOf(sheetHeader, GUARDIAN_ONE_COLUMN_NAME)).getDisplayValue();
     let guardianEmail2 = sheets[0].getRange(matchIndex+2, getIndexOf(sheetHeader, GUARDIAN_TWO_COLUMN_NAME)).getDisplayValue();
     
     if(guardianEmail1 == "") {guardianEmail1 = "NOT PROVIDED";}
@@ -554,6 +635,7 @@ function getGuardianEmails(studentEmailToLookUp) {
   }
   
 }
+
 
 function generateEmailDrafts() {
   let ccParents = copyParentsPrompt();
@@ -568,13 +650,13 @@ function generateEmailDrafts() {
   let listOfMissingAssignments = MASTER_ROSTER.getRange(2,7,MASTER_ROSTER.getLastRow()-1,1).getValues().flat(1);
   
   listOfMissingAssignments.forEach((list, index) => {
-    list = list.replace(/(\r\n|\n|\r)/gm, "");
-    let missingExtraCredit = list.split("EC:");
-    let missingClasswork = missingExtraCredit[0].split("CW:");
-    let missingHomework = missingClasswork[0].split("HW:");
+    //list = list.replace(/(\r\n|\n|\r)/gm, "");
+    let splitList = list.split(MISSING_ASSIGNMENT_LIST_DELIMITER);
+    let missingExtraWork = splitList[2];
+    let missingClasswork = splitList[1];
+    let missingHomework = splitList[0];
     
-    let missingMandatoryWork = missingHomework[1].concat("\n", missingClasswork[1]);
-    let missingExtraWork = missingExtraCredit[1];
+    let missingMandatoryWork = missingHomework.concat(missingClasswork);
     
     let row = index + 2;
     
@@ -632,7 +714,7 @@ function generateEmailDrafts() {
       });
       
       
-      let emailSubject = EMAIL_SUBJECT;
+      let emailSubject = EMAIL_SUBJECT.concat(makeFirstLetterEachWordUpper(formattedClassName));
       
       let currentStudentDraftId = EMAIL_HUB.getRange(row,getIndexOf(header, DRAFT_ID_COLUMN_NAME)).getDisplayValue();
       let updateThisDraft = draftsAlreadyCreated.find(draft => draft.getId() == currentStudentDraftId);
@@ -673,6 +755,14 @@ function makeFirstLetterUpperCase(string) {
   return string.charAt(0).toUpperCase() + string.slice(1).toLowerCase();
 }
 
+function makeFirstLetterEachWordUpper(string) {
+  let words = string.split(' ');
+  let upperCaseWords = "";
+  words.forEach((word) => upperCaseWords = upperCaseWords.concat(" ", makeFirstLetterUpperCase(word)));
+  return upperCaseWords;
+  
+}
+
 function formatCourseName(courseName) {
   COURSE_DICTIONARY.forEach(keyValuePair => {
     if(courseName.toLowerCase().includes(keyValuePair.key)) {
@@ -684,9 +774,39 @@ function formatCourseName(courseName) {
   return courseName;
 }
 
+function formatTopicRow(sheet) {
+  let topicRow = sheet.getRange(1,4,1,sheet.getLastColumn()).getDisplayValues().flat(1);
+  let arrayOfIndexes = [];
+  for(i = 0; i < topicRow.length; i++) {
+    if(topicRow[i] != "") arrayOfIndexes.push(i+4);
+  }
+ 
+  for(j = 0; j < arrayOfIndexes.length; j++) {
+    if(j == arrayOfIndexes.length-1) {
+      Logger.log(arrayOfIndexes[j], topicRow.length)
+      let range = sheet.getRange(1,arrayOfIndexes[j],1,topicRow.length-arrayOfIndexes[j]+1)
+      range.merge();
+      range.setHorizontalAlignment("center");
+      range.setVerticalAlignment("middle");
+      range.setWrap(true);
+    }
+    else {
+      Logger.log(arrayOfIndexes[j], arrayOfIndexes[j+1]-1);
+      let range = sheet.getRange(1,arrayOfIndexes[j],1,arrayOfIndexes[j+1]-arrayOfIndexes[j])
+      range.merge();
+      range.setHorizontalAlignment("center");
+      range.setVerticalAlignment("middle");
+      range.setWrap(true);    
+    }
+    
+  }
+
+}
+
 function formatSheets() {
   [a, b, ...CLASS_LIST] = GRADE_REPORT.getSheets();
   CLASS_LIST.forEach((sheet) => { 
+      formatTopicRow(sheet);
       let sortByStudentLastNameRange = sheet.getRange(5,1,sheet.getLastRow(),sheet.getLastColumn());
       sortByStudentLastNameRange.sort(2);
       
@@ -711,7 +831,7 @@ function formatSheets() {
   createConditionalFormatting();
 }
 
-function emailHubFormatting(){
+function formatEmailHub(){
   EMAIL_HUB.clearFormats();
   
   EMAIL_HUB.setFrozenRows(1);
@@ -722,7 +842,7 @@ function emailHubFormatting(){
   sortAndMergeSheet(EMAIL_HUB, true, false);
 }
 
-function masterRosterFormatting(){
+function formatMasterRoster(){
   MASTER_ROSTER.clearFormats();
   
   MASTER_ROSTER.setFrozenRows(1);
@@ -848,16 +968,22 @@ function createConditionalFormatting() {
   });
 }
 
+function testSortandMerge() {
+  sortAndMergeSheet(MASTER_ROSTER, false, false);
+  
+
+
+}
+
 function sortAndMergeSheet(sheetToFormat, wantToSort, wantToMerge){
   let classColumn = sheetToFormat.getRange(1,1,sheetToFormat.getLastRow(),1);
-  let classValues = classColumn.getValues();
+  let classValues = classColumn.getValues().flat(1);
   let classesToBeMerged = classValues.filter((cell) => cell != ""); 
   
-  let startPosition = 2;
-  
   CLASS_LIST.forEach((sheet) => {
-    let sheetName = sheet.getName();
-    let filteredClassesBySheetName = classesToBeMerged.filter((cell) => cell == sheetName);
+    let sheetName = sheet.getName().split(" (");
+    let filteredClassesBySheetName = classesToBeMerged.filter((cell) => cell == sheetName[0]);
+    let startPosition = classesToBeMerged.indexOf(sheetName[0])+1;
     
     if(filteredClassesBySheetName.length > 0) {
       let numOfColumns = 0;
@@ -867,8 +993,6 @@ function sortAndMergeSheet(sheetToFormat, wantToSort, wantToMerge){
       
       if(wantToSort) sortRange.sort(3);
       if(wantToMerge) mergeAndCenterCells(MASTER_ROSTER, startPosition, 1, filteredClassesBySheetName.length, 1); 
-  
-      startPosition += filteredClassesBySheetName.length;
     }
   })
 }

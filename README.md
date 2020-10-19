@@ -60,13 +60,13 @@ Follow these steps to fill out the required identification numbers for the code 
 
 
 ## Developer Notes
-  1. **Count the number of _missing assignments, optional tasks,_ and _extra credit_.** The three categories are processed differently. 
-    - Missing assignments trigger the email draft to be created, while other missing items (optional tasks + extra credit) do not. 
+  1. **Count the number of _missing assignments, optional tasks,_ and _extra credit_.** The categories can be defined using the corresponding global variables. 
+    - Missing assignments (type 1 or 2) trigger the email draft to be created, while other missing items (type 3 or default) do not. 
     - If a student is missing assignments, any missing extra credit will also be added onto the email draft as an additional support for their grade.
     - At the time of creation, the “Assignment Type” property in Google Classroom was not accessible via API calls so the current approach is to identify keywords within assignment names. Any assignment name that does not include a keyword will be processed automatically as an optional task. All keywords should be lowercase. 
-    - Assignments are broken into two categories: homework and classwork. Specify the keywords in the arrays:
-      - CLASSWORK_KEYWORDS
-      - HOMEWORK_KEYWORDS
+    - Specify the keywords in the corresponding arrays:
+      - ASSIGNMENT_TYPE 
+      - TYPE#_KEYWORDS
   2. **Display X number of topics.** The number of topics can be restricted in order to reduce the time it takes to generate the Missing Assignment Tracker. The number of topics can be increased to track trends for various students. The default is set to (3) topics being displayed as the intent is that older topics would not be looked at as the semester progresses. 
   3. **Guardian Emails are imported from a separate spreadsheet or can be manually input.** At the time of development, guardian emails were not reliably linked to student profiles. It is important that the spreadsheet with the guardian emails has headers that match the headers in the code. If no spreadsheet is specified then that section of code will be skipped and it is assumed that the information will be manually input or excluded. This information is not required for the email draft to be created. 
   4. **The order of sheets must remain consistent.** The assumption is that classes do not change throughout the semester. If a class is removed for some reason, then the tab must be manually deleted. It is recommended to create an entirely new Google Sheets document for each new semester instead of recycling old ones. 
