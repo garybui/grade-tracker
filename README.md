@@ -4,7 +4,7 @@ Google Apps Script project that will create a dashboard to view the assignment s
 - Saves compiled data in Google Sheets for easy viewing and access
 - Creates email drafts listing missing assignments and new due date 
 
-Preview the dashboard here: https://docs.google.com/spreadsheets/d/10Sb6kbfUxcyGOUjHBLYftv7nn5GYsYkQKZUOizr5qTs/edit?usp=sharing (The control panel is not accessible in view only mode)
+Create a copy of the file and preview the dashboard here: https://docs.google.com/spreadsheets/d/10Sb6kbfUxcyGOUjHBLYftv7nn5GYsYkQKZUOizr5qTs/edit?usp=sharing 
 
 ## Installation
 
